@@ -1,6 +1,6 @@
 # Biometric-Fusion-Avionics
 An R Shiny-based framework for pilot workload monitoring using multi-modal biometric fusion and Machine Learning
-
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18432785.svg)](https://doi.org/10.5281/zenodo.18432785)
 [![R-Shiny](https://img.shields.io/badge/Tools-R%20Shiny-blue.svg)](https://shiny.rstudio.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Status](https://img.shields.io/badge/Status-Academic--Prototype-green.svg)]()
