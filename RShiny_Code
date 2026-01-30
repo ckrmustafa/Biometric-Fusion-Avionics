@@ -1,0 +1,133 @@
+# Gerekli Kütüphaneler
+if (!require("shiny")) install.packages("shiny")
+if (!require("shinydashboard")) install.packages("shinydashboard")
+if (!require("ggplot2")) install.packages("ggplot2")
+if (!require("randomForest")) install.packages("randomForest")
+
+# 1. Model Simülasyonu (Biyometrik Füzyon Modeli)
+set.seed(123)
+n <- 150
+train_data <- data.frame(
+  Heart_Rate = c(rnorm(n, 70, 5), rnorm(n, 100, 10), rnorm(n, 140, 15)),
+  Blink_Rate = c(rnorm(n, 20, 2), rnorm(n, 12, 3), rnorm(n, 6, 2)),
+  GSR_Stress = c(rnorm(n, 5, 1), rnorm(n, 15, 3), rnorm(n, 25, 5)),
+  EEG_Focus = c(rnorm(n, 1.2, 0.2), rnorm(n, 2.5, 0.5), rnorm(n, 4, 0.8)),
+  Latency = c(rnorm(n, 0.3, 0.05), rnorm(n, 0.6, 0.1), rnorm(n, 1.2, 0.3)),
+  status = as.factor(c(rep("Normal", n), rep("Elevated", n), rep("Critical", n)))
+)
+# Önem düzeylerini hesaplamak için importance = TRUE yapıyoruz
+rf_model <- randomForest(status ~ ., data = train_data, ntree = 500, importance = TRUE)
+
+# 2. UI - Kullanıcı Arayüzü
+ui <- dashboardPage(
+  skin = "black",
+  dashboardHeader(title = "AI-Avionics High-Res System"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Real-Time Cockpit", tabName = "monitor", icon = icon("plane-arrival")),
+      menuItem("Model Analysis & Export", tabName = "export", icon = icon("file-export"))
+    ),
+    hr(),
+    sliderInput("hr_val", "Heart Rate (BPM):", 50, 180, 75),
+    sliderInput("blink_val", "Blink Rate:", 2, 30, 18),
+    sliderInput("gsr_val", "GSR (Stress):", 0, 40, 8),
+    sliderInput("eeg_val", "EEG (Beta/Alpha):", 0.5, 6.0, 1.5),
+    sliderInput("lat_val", "Latency (sec):", 0.1, 2.0, 0.4)
+  ),
+  dashboardBody(
+    tabItems(
+      tabItem(tabName = "monitor",
+              fluidRow(
+                valueBoxOutput("status_box", width = 6),
+                valueBoxOutput("action_box", width = 6)
+              ),
+              fluidRow(
+                box(title = "Biometric Stress Radar", status = "primary", solidHeader = TRUE,
+                    plotOutput("radar_plot", height = "450px"), width = 12)
+              )
+      ),
+      tabItem(tabName = "export",
+              fluidRow(
+                box(title = "Biometric Importance (XAI)", status = "danger", solidHeader = TRUE,
+                    plotOutput("importance_plot", height = "350px"), 
+                    downloadButton("download_imp_600", "Export Importance (600 DPI)"), width = 6),
+                box(title = "Current State Analysis", status = "info", solidHeader = TRUE,
+                    plotOutput("preview_radar", height = "350px"),
+                    downloadButton("download_radar_600", "Export Radar (600 DPI)"), width = 6)
+              )
+      )
+    )
+  )
+)
+
+# 3. Server - Arka Plan
+server <- function(input, output, session) {
+  
+  # Tahmin Fonksiyonu
+  prediction_label <- reactive({
+    new_case <- data.frame(
+      Heart_Rate = input$hr_val, Blink_Rate = input$blink_val, 
+      GSR_Stress = input$gsr_val, EEG_Focus = input$eeg_val, Latency = input$lat_val
+    )
+    predict(rf_model, new_case)
+  })
+  
+  # Grafik 1: Radar Plot (Biyometrik Profil)
+  radar_func <- reactive({
+    df <- data.frame(
+      Metric = c("HR", "Blink (Inv)", "GSR", "EEG", "Latency"),
+      Value = c(input$hr_val/180, (30-input$blink_val)/30, input$gsr_val/40, input$eeg_val/6, input$lat_val/2)
+    )
+    ggplot(df, aes(x = Metric, y = Value, fill = Metric)) +
+      geom_bar(stat = "identity", color = "white") + coord_polar() +
+      theme_minimal(base_size = 14) +
+      labs(title = paste("Pilot State Profile:", prediction_label()),
+           caption = "AI-Based Adaptive Avionics Framework") +
+      theme(legend.position = "none", plot.title = element_text(face="bold", hjust=0.5))
+  })
+  
+  # Grafik 2: Importance Plot
+  importance_func <- reactive({
+    imp_df <- as.data.frame(importance(rf_model))
+    imp_df$Variable <- rownames(imp_df)
+    ggplot(imp_df, aes(x = reorder(Variable, MeanDecreaseGini), y = MeanDecreaseGini)) +
+      geom_bar(stat = "identity", fill = "#c0392b") +
+      coord_flip() + theme_minimal(base_size = 14) +
+      labs(title = "Biometric Variable Importance", x = "Features", y = "Gini Importance Score")
+  })
+  
+  # Dashboard Çıktıları
+  output$radar_plot <- renderPlot({ radar_func() })
+  output$preview_radar <- renderPlot({ radar_func() })
+  output$importance_plot <- renderPlot({ importance_func() })
+  
+  # 600 DPI İndirme Yöneticileri
+  output$download_radar_600 <- downloadHandler(
+    filename = function() { paste0("Radar_Profile_", Sys.Date(), ".png") },
+    content = function(file) {
+      ggsave(file, plot = radar_func(), device = "png", width = 8, height = 7, dpi = 600)
+    }
+  )
+  
+  output$download_imp_600 <- downloadHandler(
+    filename = function() { paste0("Importance_Analysis_", Sys.Date(), ".png") },
+    content = function(file) {
+      ggsave(file, plot = importance_func(), device = "png", width = 8, height = 6, dpi = 600)
+    }
+  )
+  
+  # ValueBox Çıktıları
+  output$status_box <- renderValueBox({
+    res <- prediction_label()
+    col <- switch(as.character(res), "Normal" = "green", "Elevated" = "yellow", "Critical" = "red")
+    valueBox(res, "Predicted Workload", icon = icon("brain"), color = col)
+  })
+  
+  output$action_box <- renderValueBox({
+    res <- prediction_label()
+    action <- switch(as.character(res), "Normal" = "Manual", "Elevated" = "Assisted", "Critical" = "Autonomous")
+    valueBox(action, "Cockpit Response", icon = icon("robot"), color = "blue")
+  })
+}
+
+shinyApp(ui, server)
